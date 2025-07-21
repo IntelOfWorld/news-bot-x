@@ -1,45 +1,60 @@
-import fetch from 'node-fetch';
-import OpenAI from 'openai';
-import { TwitterApi } from 'twitter-api-v2';
+const express = require("express");
+const axios = require("axios");
+const { TwitterApi } = require("twitter-api-v2");
+require("dotenv").config();
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+const app = express();
+const PORT = process.env.PORT || 3000;
 
+// Twitter client setup
 const twitterClient = new TwitterApi({
-  appKey: process.env.X_API_KEY,
-  appSecret: process.env.X_API_SECRET,
-  accessToken: process.env.X_ACCESS_TOKEN,
-  accessSecret: process.env.X_ACCESS_SECRET,
+  appKey: process.env.TWITTER_API_KEY,
+  appSecret: process.env.TWITTER_API_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessSecret: process.env.TWITTER_ACCESS_SECRET,
 });
 
+// Simple homepage to confirm server is running
+app.get("/", (req, res) => {
+  res.send("Bot is running!");
+});
+
+// Function to fetch news from NewsAPI
 async function fetchNews() {
-  const res = await fetch(`https://newsapi.org/v2/top-headlines?language=en&pageSize=3&apiKey=${process.env.NEWS_API_KEY}`);
-  const json = await res.json();
-  return json.articles;
+  try {
+    const response = await axios.get(
+      `https://newsapi.org/v2/top-headlines?country=in&pageSize=1&apiKey=${process.env.NEWS_API}`
+    );
+    const article = response.data.articles[0];
+    if (article) {
+      return `${article.title} \n\n${article.url}`;
+    }
+  } catch (error) {
+    console.error("❌ Error fetching news:", error.message);
+  }
+  return null;
 }
 
-async function rewriteWithIndiaBias(article) {
-  const prompt = `Rewrite this headline and summary as a short tweet, making India look good subtly (without lying), even if India lost. Stay factual but with a nationalistic Indian voice. Use simple tone for X: "${article.title} - ${article.description}"`;
-  const response = await openai.chat.completions.create({
-    messages: [{ role: 'user', content: prompt }],
-    model: 'gpt-3.5-turbo',
-    max_tokens: 80,
-  });
-  return response.choices[0].message.content;
-}
-
-async function postNewsToTwitter() {
-  const articles = await fetchNews();
-  for (const article of articles) {
-    const tweet = await rewriteWithIndiaBias(article);
+// Tweet posting function
+async function postTweet() {
+  const tweet = await fetchNews();
+  if (tweet) {
     try {
       await twitterClient.v2.tweet(tweet);
-      console.log("Tweeted:", tweet);
-    } catch (e) {
-      console.error("Failed to tweet:", tweet, e);
+      console.log("✅ Tweet posted:", tweet);
+    } catch (error) {
+      console.error("❌ Error posting tweet:", error.message);
     }
   }
 }
 
-postNewsToTwitter();
+// Route to manually trigger tweet
+app.get("/tweet", async (req, res) => {
+  await postTweet();
+  res.send("Tweet posted (if news was available).");
+});
+
+// Start server
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
