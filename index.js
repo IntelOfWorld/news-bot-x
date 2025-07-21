@@ -82,7 +82,7 @@ async function rewriteWithGPT(article) {
 
   const prompt = `
 Rewrite the following news article into a tweet under 280 characters.
-Make it attention-grabbing, slightly bold or sharp, and mention either "${randomState}" or "${randomPerson}" if possible. Keep it relevant to the news.
+Make it attention-grabbing, slightly bold or sharp, and mention either "${randomState}" or "${randomPerson}" if possible. Keep it relevant to the news. also make it in such a way that people get eager to interact with the posts
 
 Headline: ${article.title}
 Description: ${article.description || ''}
