@@ -1,15 +1,16 @@
 {
-  "name": "ai-news-bot",
+  "name": "news-twitter-bot",
   "version": "1.0.0",
-  "description": "Automated news bot that posts top headlines to Twitter every 15 minutes.",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "axios": "^1.6.8",
+    "axios": "^1.6.7",
     "dotenv": "^16.3.1",
     "express": "^4.19.2",
-    "twitter-api-v2": "^1.18.0"
+    "openai": "^4.50.1",
+    "twitter-api-v2": "^1.19.1"
   }
 }
