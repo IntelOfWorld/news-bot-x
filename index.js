@@ -1,97 +1,109 @@
-import OpenAI from 'openai';
+import fs from 'fs';
 import axios from 'axios';
-import { TwitterApi } from 'twitter-api-v2';
 import dotenv from 'dotenv';
+import express from 'express';
+import { TwitterApi } from 'twitter-api-v2';
+import OpenAI from 'openai';
 
 dotenv.config();
 
-// ------------------ SETUP ------------------
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// Load posted URLs from posted.txt
+let posted = new Set();
+try {
+  const data = fs.readFileSync('posted.txt', 'utf-8');
+  posted = new Set(data.split('\n').filter(line => line.trim() !== ''));
+} catch (err) {
+  console.log('No posted.txt found, starting fresh.');
+}
 
-const twitterClient = new TwitterApi({
-  appKey: process.env.TWITTER_API_KEY,
-  appSecret: process.env.TWITTER_API_KEY_SECRET,
-  accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET
+// Save posted URL to file
+function savePosted(url) {
+  if (!posted.has(url)) {
+    posted.add(url);
+    fs.appendFileSync('posted.txt', url + '\n');
+  }
+}
+
+// OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
-const rwClient = twitterClient.readWrite;
+// Twitter client
+const twitterClient = new TwitterApi({
+  appKey: process.env.TWITTER_API_KEY,
+  appSecret: process.env.TWITTER_API_SECRET,
+  accessToken: process.env.TWITTER_ACCESS_TOKEN,
+  accessSecret: process.env.TWITTER_ACCESS_SECRET,
+});
 
-// -------------- HELPERS --------------------
-
-async function getNewsHeadline() {
-  const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=1&sortBy=publishedAt&apiKey=${process.env.NEWS_API_KEY}`;
-
+// Tweet function
+async function postTweet(text) {
   try {
-    const res = await axios.get(url);
-    const data = res.data;
-
-    if (data.articles && data.articles.length > 0) {
-      const article = data.articles[0];
-      return {
-        title: article.title,
-        description: article.description,
-        url: article.url
-      };
-    } else {
-      throw new Error('No articles found.');
-    }
+    await twitterClient.v2.tweet(text);
+    console.log('✅ Tweeted:\n', text);
   } catch (err) {
-    console.error('Error fetching news:', err.message);
-    return null;
+    console.error('❌ Twitter error:', err);
   }
 }
 
-async function generateTweet(text) {
+// Get news
+async function getTopHeadlines() {
   try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: [
-        { role: 'system', content: 'You summarize news in under 280 characters like a tweet.' },
-        { role: 'user', content: `Summarize this article for a tweet:\n${text}` }
-      ],
+    const response = await axios.get('https://newsapi.org/v2/top-headlines', {
+      params: {
+        language: 'en',
+        pageSize: 10,
+        sortBy: 'publishedAt',
+        apiKey: process.env.NEWS_API_KEY,
+      },
+    });
+    return response.data.articles;
+  } catch (err) {
+    console.error('❌ News API error:', err);
+    return [];
+  }
+}
+
+// Rewrite news using GPT
+async function rewriteWithGPT(article) {
+  const prompt = `Rewrite this news headline and summary into a tweet in under 280 characters:\n\nHeadline: ${article.title}\nDescription: ${article.description || ''}\n\nTweet:`;
+
+  try {
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'gpt-4',
+      max_tokens: 100,
       temperature: 0.7,
-      max_tokens: 100
     });
 
-    return response.choices[0].message.content.trim();
+    return completion.choices[0].message.content.trim();
   } catch (err) {
-    console.error('OpenAI failed:', err.message);
+    console.error('❌ GPT error:', err);
     return null;
   }
 }
 
-async function postTweet(tweet) {
-  try {
-    await rwClient.v2.tweet(tweet);
-    console.log('✅ Tweet posted:', tweet);
-  } catch (err) {
-    console.error('❌ Failed to post tweet:', err.message);
-  }
-}
-
-// ------------- MAIN BOT FUNCTION -------------
-
+// Main bot logic
 async function runBot() {
-  const news = await getNewsHeadline();
+  const articles = await getTopHeadlines();
+  for (const article of articles) {
+    if (!article.url || posted.has(article.url)) continue;
 
-  if (!news) return;
-
-  let tweet = await generateTweet(`${news.title}\n\n${news.description || ''}`);
-
-  // Fallback if GPT fails
-  if (!tweet || tweet.length === 0) {
-    tweet = `${news.title}\n\n${news.url}`;
+    const tweet = await rewriteWithGPT(article);
+    if (tweet) {
+      await postTweet(tweet);
+      savePosted(article.url);
+      break; // Tweet only one article per run
+    }
   }
-
-  // Make sure it's tweet-length
-  if (tweet.length > 280) {
-    tweet = tweet.slice(0, 277) + '...';
-  }
-
-  await postTweet(tweet);
 }
 
-// ------------------ EXECUTE ------------------
+// Run every 15 minutes
+setInterval(runBot, 15 * 60 * 1000);
+runBot(); // also run immediately
 
-runBot();
+// Keep alive server (for Render)
+const app = express();
+app.get('/', (req, res) => res.send('🟢 GlobalIntel bot is running.'));
+app.listen(process.env.PORT || 3000);
