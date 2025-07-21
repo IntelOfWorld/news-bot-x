@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import fetch from 'node-fetch';
 import { TwitterApi } from 'twitter-api-v2';
-import { Configuration, OpenAIApi } from 'openai';
+import OpenAI from 'openai';
 
 // Twitter client using your env names
 const twitterClient = new TwitterApi({
