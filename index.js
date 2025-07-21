@@ -1,102 +1,89 @@
-import fetch from "node-fetch";
-import { config } from "dotenv";
-import { TwitterApi } from "twitter-api-v2";
-import fs from "fs/promises";
-import OpenAI from "openai";
+import { TwitterApi } from 'twitter-api-v2';
+import dotenv from 'dotenv';
+import fetch from 'node-fetch';
+import fs from 'fs/promises';
+import { Configuration, OpenAIApi } from 'openai';
 
-config(); // Load env variables
+dotenv.config();
 
-// --- Twitter client (v1.1 compatible)
-const client = new TwitterApi({
+const twitterClient = new TwitterApi({
   appKey: process.env.TWITTER_API_KEY,
   appSecret: process.env.TWITTER_API_KEY_SECRET,
   accessToken: process.env.TWITTER_ACCESS_TOKEN,
   accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
 });
-const rwClient = client.readWrite.v1;
 
-// --- OpenAI client
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const rwClient = twitterClient.readWrite;
 
-// --- Utility: load previously tweeted titles
-async function loadPostedTitles() {
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
+
+const POSTED_FILE = './posted.json';
+
+async function loadPostedUrls() {
   try {
-    const data = await fs.readFile("posted.json", "utf-8");
+    const data = await fs.readFile(POSTED_FILE, 'utf-8');
     return JSON.parse(data);
   } catch {
     return [];
   }
 }
 
-async function savePostedTitles(titles) {
-  await fs.writeFile("posted.json", JSON.stringify(titles.slice(-50))); // Keep last 50
+async function savePostedUrls(urls) {
+  await fs.writeFile(POSTED_FILE, JSON.stringify(urls, null, 2));
 }
 
-// --- Fetch top Indian and global news
-async function getFreshNews() {
+async function fetchNews() {
   try {
-    const url = `https://newsapi.org/v2/top-headlines?language=en&country=in&pageSize=10&apiKey=${process.env.NEWS_API_KEY}`;
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (!data.articles || data.articles.length === 0) {
-      console.error("❌ No articles found.");
-      return null;
-    }
-
-    const postedTitles = await loadPostedTitles();
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-
-    const freshArticle = data.articles.find(
-      a =>
-        a.title &&
-        a.url &&
-        !postedTitles.includes(a.title) &&
-        new Date(a.publishedAt) > oneHourAgo
+    const res = await fetch(
+      `https://newsapi.org/v2/top-headlines?language=en&apiKey=${process.env.NEWS_API_KEY}&country=in&pageSize=10`
     );
-
-    return freshArticle || null;
+    const data = await res.json();
+    return data.articles.filter(a => a.title && a.url);
   } catch (err) {
-    console.error("❌ Error fetching news:", err);
-    return null;
+    console.error('🔴 Error fetching news:', err);
+    return [];
   }
 }
 
-// --- Use OpenAI to make engaging tweet
-async function generateTweet(article) {
-  const prompt = `Rewrite the following news headline to make it more engaging and attention-grabbing for Twitter (max 250 characters). Add a little suspense or curiosity but don't lie. Then append the original article link:\n\n"${article.title}"\n\nURL: ${article.url}`;
-
-  const completion = await openai.chat.completions.create({
-    model: "gpt-3.5-turbo",
-    messages: [{ role: "user", content: prompt }],
-    temperature: 0.7,
-    max_tokens: 150,
-  });
-
-  return completion.choices[0]?.message?.content?.trim();
+async function makeHeadlineEngaging(title, description) {
+  try {
+    const prompt = `Make the following news headline more engaging and tweet-friendly, without adding fake info:\n\nTitle: "${title}"\nDescription: "${description}"\n\nTweet:`;
+    const res = await openai.createCompletion({
+      model: 'text-davinci-003',
+      prompt,
+      max_tokens: 80,
+      temperature: 0.7,
+    });
+    return res.data.choices[0].text.trim();
+  } catch (err) {
+    console.error('🟡 Failed to generate engaging tweet:', err);
+    return title;
+  }
 }
 
-// --- Main tweet logic
 async function postTweet() {
-  const article = await getFreshNews();
-  if (!article) {
-    console.log("🛑 No fresh news to post.");
+  const posted = await loadPostedUrls();
+  const newsList = await fetchNews();
+  const fresh = newsList.find(article => !posted.includes(article.url));
+
+  if (!fresh) {
+    console.log('ℹ️ No new articles to tweet.');
     return;
   }
 
-  const tweetContent = await generateTweet(article);
+  const engagingText = await makeHeadlineEngaging(fresh.title, fresh.description || '');
+  const tweet = `${engagingText}\n\n${fresh.url}`;
 
   try {
-    const tweet = await rwClient.tweet(tweetContent);
-    console.log("✅ Tweet posted:", tweet.id_str);
-
-    const postedTitles = await loadPostedTitles();
-    postedTitles.push(article.title);
-    await savePostedTitles(postedTitles);
+    const { data } = await rwClient.v1.tweet(tweet);
+    console.log('✅ Tweet posted:', tweet);
+    await savePostedUrls([...posted, fresh.url]);
   } catch (err) {
-    console.error("❌ Failed to post tweet:", err);
+    console.error('❌ Failed to post tweet:', err);
   }
 }
 
-// --- Run once
 postTweet();
