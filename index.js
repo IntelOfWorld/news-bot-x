@@ -1,94 +1,65 @@
-const express = require("express");
-const axios = require("axios");
-const { TwitterApi } = require("twitter-api-v2");
-const OpenAI = require("openai");
-require("dotenv").config();
+// index.js (ES Module compatible)
+import dotenv from 'dotenv';
+import axios from 'axios';
+import express from 'express';
+import { TwitterApi } from 'twitter-api-v2';
+import OpenAI from 'openai';
+
+dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Twitter client setup
 const twitterClient = new TwitterApi({
   appKey: process.env.TWITTER_API_KEY,
-  appSecret: process.env.TWITTER_API_SECRET,
+  appSecret: process.env.TWITTER_API_KEY_SECRET,
   accessToken: process.env.TWITTER_ACCESS_TOKEN,
   accessSecret: process.env.TWITTER_ACCESS_SECRET,
 });
 
+// OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-let lastTweetTime = "Not yet posted.";
-
-async function fetchNews() {
+// Fetch news, summarize, and tweet every 15 mins
+async function fetchAndTweetNews() {
   try {
-    const response = await axios.get(
-      `https://newsdata.io/api/1/news?apikey=${process.env.NEWSDATA_API_KEY}&country=in,us,gb&language=en&category=top`
-    );
-    const articles = response.data.results;
+    const news = await axios.get('https://newsapi.org/v2/top-headlines', {
+      params: {
+        country: 'in',
+        apiKey: process.env.NEWS_API_KEY,
+        pageSize: 1,
+      },
+    });
 
-    if (!articles || articles.length === 0) return null;
+    const article = news.data.articles[0];
+    const prompt = `Summarize this headline in a tweet under 280 characters:\n\n${article.title}\n${article.description}`;
 
-    for (const article of articles) {
-      if (article.title && article.link) {
-        return `${article.title} — ${article.link}`;
-      }
-    }
-
-    return null;
-  } catch (error) {
-    console.error("❌ Error fetching news:", error.message);
-    return null;
-  }
-}
-
-async function generateTweet(text) {
-  try {
     const completion = await openai.chat.completions.create({
-      model: "gpt-3.5-turbo",
-      messages: [
-        {
-          role: "system",
-          content: "Rewrite this news title and link into a tweet under 280 characters, slightly witty, slightly India-biased, and globally relevant.",
-        },
-        { role: "user", content: text },
-      ],
+      model: 'gpt-3.5-turbo',
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 100,
     });
 
-    return completion.choices[0].message.content;
-  } catch (error) {
-    console.error("❌ Error generating tweet:", error.message);
-    return null;
-  }
-}
+    const tweet = completion.choices[0].message.content.trim();
 
-async function postTweet() {
-  const news = await fetchNews();
-  if (!news) return;
-
-  const tweet = await generateTweet(news);
-  if (!tweet) return;
-
-  try {
     await twitterClient.v2.tweet(tweet);
-    lastTweetTime = new Date().toLocaleString("en-IN", {
-      timeZone: "Asia/Kolkata",
-    });
-    console.log("✅ Tweet posted at", lastTweetTime);
+    console.log(`✅ Tweet posted at ${new Date().toLocaleTimeString()}: ${tweet}`);
   } catch (error) {
-    console.error("❌ Error posting tweet:", error.message);
+    console.error('❌ Error tweeting:', error.message);
   }
 }
 
-app.get("/", async (req, res) => {
-  await postTweet();
-  res.send(`✅ Tweet attempted at ${lastTweetTime}`);
+// Ping route
+app.get('/', (req, res) => {
+  res.send('News bot is running');
 });
 
-app.get("/status", (req, res) => {
-  res.send(`🕒 Last tweet was posted at: ${lastTweetTime}`);
-});
-
+// Start the server
 app.listen(port, () => {
-  console.log(`🔁 Bot running on port ${port}`);
+  console.log(`Server listening on port ${port}`);
+  fetchAndTweetNews(); // Initial tweet on deploy
+  setInterval(fetchAndTweetNews, 15 * 60 * 1000); // Tweet every 15 min
 });
