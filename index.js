@@ -65,16 +65,37 @@ async function getTopHeadlines() {
   }
 }
 
-// Rewrite news using GPT
+// Rewrite news using GPT with Indian context
 async function rewriteWithGPT(article) {
-  const prompt = `Rewrite this news headline and summary into a tweet in under 280 characters:\n\nHeadline: ${article.title}\nDescription: ${article.description || ''}\n\nTweet:`;
+  const indianStates = [
+    "Punjab", "Gujarat", "Karnataka", "West Bengal", "Maharashtra",
+    "Uttar Pradesh", "Kerala", "Tamil Nadu", "Rajasthan", "Delhi"
+  ];
+
+  const famousPeople = [
+    "NSA Ajit Doval", "PM Modi", "Dr. S. Jaishankar", "Kiren Rijiju",
+    "Nandan Nilekani", "Raghuram Rajan", "K. Sivan", "Dr. APJ Abdul Kalam"
+  ];
+
+  const randomState = indianStates[Math.floor(Math.random() * indianStates.length)];
+  const randomPerson = famousPeople[Math.floor(Math.random() * famousPeople.length)];
+
+  const prompt = `
+Rewrite the following news article into a tweet under 280 characters.
+Make it attention-grabbing, slightly bold or sharp, and mention either "${randomState}" or "${randomPerson}" if possible. Keep it relevant to the news.
+
+Headline: ${article.title}
+Description: ${article.description || ''}
+
+Tweet:
+  `;
 
   try {
     const completion = await openai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'gpt-4',
-      max_tokens: 100,
-      temperature: 0.7,
+      max_tokens: 120,
+      temperature: 0.75,
     });
 
     return completion.choices[0].message.content.trim();
@@ -103,7 +124,7 @@ async function runBot() {
 setInterval(runBot, 90 * 60 * 1000);
 runBot(); // also run immediately
 
-// Keep alive server (for Render)
+// Keep alive server (for Replit/Render)
 const app = express();
 app.get('/', (req, res) => res.send('🟢 GlobalIntel bot is running.'));
 app.listen(process.env.PORT || 3000);
