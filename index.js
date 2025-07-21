@@ -1,68 +1,77 @@
 import dotenv from 'dotenv';
+import OpenAI from 'openai';
 import fetch from 'node-fetch';
 import { TwitterApi } from 'twitter-api-v2';
-import OpenAI from 'openai';
 
 dotenv.config();
 
+// OpenAI setup
+const configuration = new Configuration({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+const openai = new OpenAIApi(configuration);
+
+// Twitter setup
 const twitterClient = new TwitterApi({
   appKey: process.env.TWITTER_API_KEY,
-  appSecret: process.env.TWITTER_API_KEY_SECRET,
+  appSecret: process.env.TWITTER_API_SECRET,
   accessToken: process.env.TWITTER_ACCESS_TOKEN,
-  accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET
+  accessSecret: process.env.TWITTER_ACCESS_SECRET,
 });
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+// News API setup
+const NEWS_API_URL = `https://newsapi.org/v2/top-headlines?country=in&apiKey=${process.env.NEWS_API_KEY}`;
 
-async function fetchTopNews() {
-  const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=5&sortBy=publishedAt&apiKey=${process.env.NEWS_API_KEY}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  return data.articles || [];
+async function fetchHeadlines() {
+  const response = await fetch(NEWS_API_URL);
+  const data = await response.json();
+  if (!data.articles || data.articles.length === 0) return null;
+  return data.articles.slice(0, 3).map((a) => `• ${a.title}`).join('\n');
 }
 
-async function generateTweetFromArticle(article) {
-  const prompt = `Write a short tweet (under 280 characters) summarizing this news article in a neutral tone. Include hashtags if relevant.\n\nTitle: ${article.title}\n\nDescription: ${article.description}`;
-
+async function generateTweet(newsText) {
   try {
-    const chatResponse = await openai.chat.completions.create({
+    const gptResponse = await openai.createChatCompletion({
       model: 'gpt-3.5-turbo',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.7,
-      max_tokens: 100
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a concise news summarizer who formats news in tweet style (max 280 characters) with a slight focus on Indian context.',
+        },
+        {
+          role: 'user',
+          content: `Summarize this into a tweet:\n${newsText}`,
+        },
+      ],
     });
 
-    const tweet = chatResponse.choices[0].message.content.trim();
-    return tweet;
+    const tweet = gptResponse.data.choices[0].message.content.trim();
+    return tweet.length <= 280 ? tweet : tweet.slice(0, 277) + '...';
   } catch (err) {
-    console.error('⚠️ GPT failed. Using fallback.', err.message);
-    // Fallback tweet if OpenAI quota exceeded
-    return `${article.title}\n\nRead more: ${article.url}`;
+    console.error('GPT failed, using fallback:', err.message);
+    return newsText.slice(0, 277) + '...';
   }
 }
 
 async function postTweet(text) {
   try {
-    await twitterClient.v2.tweet(text);
-    console.log(`✅ Tweeted: ${text}`);
+    const tweet = await twitterClient.v2.tweet(text);
+    console.log('Tweeted:', tweet);
   } catch (err) {
-    console.error('❌ Failed to tweet:', err);
+    console.error('Tweet failed:', err);
   }
 }
 
-async function runNewsBot() {
-  const articles = await fetchTopNews();
-  if (articles.length === 0) {
-    console.log('⚠️ No new articles to post.');
+async function runBot() {
+  const headlines = await fetchHeadlines();
+  if (!headlines) {
+    console.error('No news fetched');
     return;
   }
 
-  const article = articles[Math.floor(Math.random() * articles.length)];
-  const tweet = await generateTweetFromArticle(article);
+  const tweet = await generateTweet(headlines);
   await postTweet(tweet);
 }
 
-setInterval(runNewsBot, 15 * 60 * 1000); // Every 15 minutes
-runNewsBot(); // Run immediately on start
+// Run every 15 mins
+runBot();
