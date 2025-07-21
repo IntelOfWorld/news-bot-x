@@ -99,8 +99,8 @@ async function runBot() {
   }
 }
 
-// Run every 10 minutes
-setInterval(runBot, 10 * 60 * 1000);
+// Run every 90 minutes
+setInterval(runBot, 90 * 60 * 1000);
 runBot(); // also run immediately
 
 // Keep alive server (for Render)
