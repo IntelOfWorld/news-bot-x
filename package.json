@@ -1,0 +1,11 @@
+{
+  "name": "news-bot-x",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "openai": "^4.21.1",
+    "twitter-api-v2": "^1.17.0"
+  }
+}
