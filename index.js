@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import fetch from 'node-fetch';
+import axios from 'axios';
 import { TwitterApi } from 'twitter-api-v2';
 import dotenv from 'dotenv';
 
@@ -23,8 +23,8 @@ async function getNewsHeadline() {
   const url = `https://newsapi.org/v2/top-headlines?language=en&pageSize=1&sortBy=publishedAt&apiKey=${process.env.NEWS_API_KEY}`;
 
   try {
-    const res = await fetch(url);
-    const data = await res.json();
+    const res = await axios.get(url);
+    const data = res.data;
 
     if (data.articles && data.articles.length > 0) {
       const article = data.articles[0];
