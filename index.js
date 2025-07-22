@@ -87,7 +87,9 @@ Make people *stop scrolling* and engage.
 
 Include context or quotes only if necessary. Mention "${randomState}" or "${randomPerson}" **only if it fits naturally**. Avoid forcing it.
 
-End with: "Follow @IntelOfWorld for real-time global alerts." (included in limit)
+also use valid hashtags that can provide with impressions and views.
+
+End with: "Follow @IntelOfWorld for real-time global alerts." (included in limit) in next line
 
 Here’s the article:
 Title: ${article.title}
