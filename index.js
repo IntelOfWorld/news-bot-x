@@ -65,7 +65,7 @@ async function getTopHeadlines() {
   }
 }
 
-// Rewrite news using GPT with Indian context
+// Rewrite news using GPT with attention-grabbing tweet format
 async function rewriteWithGPT(article) {
   const indianStates = [
     "Punjab", "Gujarat", "Karnataka", "West Bengal", "Maharashtra",
@@ -81,21 +81,27 @@ async function rewriteWithGPT(article) {
   const randomPerson = famousPeople[Math.floor(Math.random() * famousPeople.length)];
 
   const prompt = `
-Rewrite the following news article into a tweet under 280 characters.
-Make it attention-grabbing, slightly bold or sharp, and mention either "${randomState}" or "${randomPerson}" if possible. Keep it relevant to the news. also make it in such a way that people get eager to interact with the posts
+You're an expert social media editor. Rewrite the following news as a bold, attention-grabbing tweet under 280 characters. Use a 🚨 emoji and start with "BREAKING:" in caps if it's urgent or shocking.
 
-Headline: ${article.title}
+Make people *stop scrolling* and engage.
+
+Include context or quotes only if necessary. Mention "${randomState}" or "${randomPerson}" **only if it fits naturally**. Avoid forcing it.
+
+End with: "Follow @IntelOfWorld for real-time global alerts." (included in limit)
+
+Here’s the article:
+Title: ${article.title}
 Description: ${article.description || ''}
 
 Tweet:
-  `;
+`;
 
   try {
     const completion = await openai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
       model: 'gpt-4',
-      max_tokens: 120,
-      temperature: 0.75,
+      max_tokens: 140,
+      temperature: 0.8,
     });
 
     return completion.choices[0].message.content.trim();
