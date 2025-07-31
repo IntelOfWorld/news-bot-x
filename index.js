@@ -47,22 +47,29 @@ async function postTweet(text) {
   }
 }
 
-// Get news
+// Get news (only global & major regions)
 async function getTopHeadlines() {
-  try {
-    const response = await axios.get('https://newsapi.org/v2/top-headlines', {
-      params: {
-        language: 'en',
-        pageSize: 10,
-        sortBy: 'publishedAt',
-        apiKey: process.env.NEWS_API_KEY,
-      },
-    });
-    return response.data.articles;
-  } catch (err) {
-    console.error('❌ News API error:', err);
-    return [];
+  const countries = ['us', 'in', 'cn', 'jp', 'kr', 'pk', 'bd', 'ru', 'ae', 'sa', 'de', 'fr', 'gb', 'it'];
+  let articles = [];
+
+  for (const country of countries) {
+    try {
+      const response = await axios.get('https://newsapi.org/v2/top-headlines', {
+        params: {
+          language: 'en',
+          pageSize: 3,
+          sortBy: 'publishedAt',
+          country,
+          apiKey: process.env.NEWS_API_KEY,
+        },
+      });
+      articles = articles.concat(response.data.articles);
+    } catch (err) {
+      console.error(`❌ News API error (${country}):`, err.message);
+    }
   }
+
+  return articles;
 }
 
 // Rewrite news using GPT with attention-grabbing tweet format
@@ -81,18 +88,18 @@ async function rewriteWithGPT(article) {
   const randomPerson = famousPeople[Math.floor(Math.random() * famousPeople.length)];
 
   const prompt = `
-You're an expert social media editor. Rewrite the following news as a bold, attention-grabbing tweet under 280 characters. Use a 🚨 emoji and start with "BREAKING:" in caps if it's urgent or shocking.
+You're a social media editor for a global crisis alert account.
 
-Make people *stop scrolling* and engage.
+Turn the article below into a bold, attention-grabbing tweet under 280 characters.
 
-Include context or quotes only if necessary. Mention "${randomState}" or "${randomPerson}" **only if it fits naturally**. Avoid forcing it.
+1. Use 🚨 and start with "BREAKING:" (if urgent/shocking).
+2. Use compelling language people *must* click or reply to.
+3. Add 1-2 relevant global hashtags.
+4. Mention "${randomState}" or "${randomPerson}" only if it fits naturally.
+5. Do NOT include the link.
+6. End with: Follow @IntelOfWorld for real-time global alerts.
 
-also use valid hashtags that can provide with impressions and views.
-
-End with: "Follow @IntelOfWorld for real-time global alerts." (included in limit) in next line
-
-Here’s the article:
-Title: ${article.title}
+News Title: ${article.title}
 Description: ${article.description || ''}
 
 Tweet:
