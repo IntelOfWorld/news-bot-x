@@ -24,6 +24,17 @@ function savePosted(url) {
   }
 }
 
+// Track image generation (reset daily)
+let imageCount = 0;
+let lastResetDay = new Date().getDate();
+function resetImageCountIfNeeded() {
+  const today = new Date().getDate();
+  if (today !== lastResetDay) {
+    imageCount = 0;
+    lastResetDay = today;
+  }
+}
+
 // OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -37,17 +48,27 @@ const twitterClient = new TwitterApi({
   accessSecret: process.env.TWITTER_ACCESS_TOKEN_SECRET,
 });
 
-// Tweet function
-async function postTweet(text) {
+// Tweet function with or without image
+async function postTweet(text, imageUrl = null) {
   try {
-    await twitterClient.v2.tweet(text);
+    if (imageUrl) {
+      const image = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+      const mediaId = await twitterClient.v1.uploadMedia(Buffer.from(image.data), { type: 'png' });
+
+      await twitterClient.v2.tweet({
+        text,
+        media: { media_ids: [mediaId] },
+      });
+    } else {
+      await twitterClient.v2.tweet(text);
+    }
     console.log('✅ Tweeted:\n', text);
   } catch (err) {
     console.error('❌ Twitter error:', err);
   }
 }
 
-// Get news (only global & major regions)
+// Get global & major-region news
 async function getTopHeadlines() {
   const countries = ['us', 'in', 'cn', 'jp', 'kr', 'pk', 'bd', 'ru', 'ae', 'sa', 'de', 'fr', 'gb', 'it'];
   let articles = [];
@@ -72,7 +93,7 @@ async function getTopHeadlines() {
   return articles;
 }
 
-// Rewrite news using GPT with attention-grabbing tweet format
+// Rewrite news using GPT
 async function rewriteWithGPT(article) {
   const indianStates = [
     "Punjab", "Gujarat", "Karnataka", "West Bengal", "Maharashtra",
@@ -120,18 +141,48 @@ Tweet:
   }
 }
 
+// Generate image if eligible
+async function maybeGenerateImage(prompt) {
+  resetImageCountIfNeeded();
+  if (imageCount >= 3) return null;
+
+  try {
+    const result = await openai.images.generate({
+      prompt: `Realistic illustration for breaking news: ${prompt}`,
+      n: 1,
+      size: '1024x1024',
+    });
+
+    const imageUrl = result.data[0]?.url;
+    if (imageUrl) {
+      imageCount++;
+      return imageUrl;
+    }
+  } catch (err) {
+    console.error('❌ Image generation error:', err.message);
+  }
+
+  return null;
+}
+
 // Main bot logic
 async function runBot() {
   const articles = await getTopHeadlines();
+
   for (const article of articles) {
     if (!article.url || posted.has(article.url)) continue;
 
     const tweet = await rewriteWithGPT(article);
-    if (tweet) {
-      await postTweet(tweet);
-      savePosted(article.url);
-      break; // Tweet only one article per run
+    if (!tweet) continue;
+
+    let imageUrl = null;
+    if (article.title.toLowerCase().includes("explosion") || article.title.toLowerCase().includes("attack")) {
+      imageUrl = await maybeGenerateImage(article.title);
     }
+
+    await postTweet(tweet, imageUrl);
+    savePosted(article.url);
+    break; // only one tweet per run
   }
 }
 
