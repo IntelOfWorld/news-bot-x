@@ -12,7 +12,7 @@ let posted = new Set();
 try {
   const data = fs.readFileSync('posted.txt', 'utf-8');
   posted = new Set(data.split('\n').filter(line => line.trim() !== ''));
-} catch (err) {
+} catch {
   console.log('No posted.txt found, starting fresh.');
 }
 
@@ -68,9 +68,9 @@ async function postTweet(text, imageUrl = null) {
   }
 }
 
-// Get global & major-region news
+// Get headlines only from selected countries
 async function getTopHeadlines() {
-  const countries = ['us', 'in', 'cn', 'jp', 'kr', 'pk', 'bd', 'ru', 'ae', 'sa', 'de', 'fr', 'gb', 'it'];
+  const countries = ['in', 'pk', 'us', 'cn', 'ru'];
   let articles = [];
 
   for (const country of countries) {
@@ -93,31 +93,23 @@ async function getTopHeadlines() {
   return articles;
 }
 
-// Rewrite news using GPT
+// Rewrite news into tweet using GPT
 async function rewriteWithGPT(article) {
-  const indianStates = [
-    "Punjab", "Gujarat", "Karnataka", "West Bengal", "Maharashtra",
-    "Uttar Pradesh", "Kerala", "Tamil Nadu", "Rajasthan", "Delhi"
-  ];
-
-  const famousPeople = [
-    "NSA Ajit Doval", "PM Modi", "Dr. S. Jaishankar", "Kiren Rijiju",
-    "Nandan Nilekani", "Raghuram Rajan", "K. Sivan", "Dr. APJ Abdul Kalam"
-  ];
-
+  const indianStates = ["Punjab", "Gujarat", "Karnataka", "West Bengal", "Maharashtra", "Uttar Pradesh", "Kerala", "Tamil Nadu", "Rajasthan", "Delhi"];
+  const famousPeople = ["NSA Ajit Doval", "PM Modi", "Dr. S. Jaishankar", "Kiren Rijiju", "Nandan Nilekani", "Raghuram Rajan", "K. Sivan", "Dr. APJ Abdul Kalam"];
   const randomState = indianStates[Math.floor(Math.random() * indianStates.length)];
   const randomPerson = famousPeople[Math.floor(Math.random() * famousPeople.length)];
 
   const prompt = `
-You're a social media editor for a global crisis alert account.
+You're a social media editor for a breaking news alert account.
 
-Turn the article below into a bold, attention-grabbing tweet under 280 characters.
+Create a bold, urgent tweet under 280 characters using the article below.
 
-1. Use 🚨 and start with "BREAKING:" (if urgent/shocking).
-2. Use compelling language people *must* click or reply to.
-3. Add 1-2 relevant global hashtags.
-4. Mention "${randomState}" or "${randomPerson}" only if it fits naturally.
-5. Do NOT include the link.
+1. Start with 🚨 BREAKING: if serious.
+2. Be click-worthy.
+3. Use 1-2 hashtags.
+4. Mention "${randomState}" or "${randomPerson}" only if natural.
+5. No links.
 6. End with: Follow @IntelOfWorld for real-time global alerts.
 
 News Title: ${article.title}
@@ -136,19 +128,19 @@ Tweet:
 
     return completion.choices[0].message.content.trim();
   } catch (err) {
-    console.error('❌ GPT error:', err);
+    console.error('❌ GPT error:', err.message);
     return null;
   }
 }
 
-// Generate image if eligible
+// Generate image if urgent
 async function maybeGenerateImage(prompt) {
   resetImageCountIfNeeded();
   if (imageCount >= 3) return null;
 
   try {
     const result = await openai.images.generate({
-      prompt: `Realistic illustration for breaking news: ${prompt}`,
+      prompt: `Realistic breaking news illustration: ${prompt}`,
       n: 1,
       size: '1024x1024',
     });
@@ -165,7 +157,7 @@ async function maybeGenerateImage(prompt) {
   return null;
 }
 
-// Main bot logic
+// Main bot loop
 async function runBot() {
   const articles = await getTopHeadlines();
 
@@ -175,22 +167,22 @@ async function runBot() {
     const tweet = await rewriteWithGPT(article);
     if (!tweet) continue;
 
-    let imageUrl = null;
-    if (article.title.toLowerCase().includes("explosion") || article.title.toLowerCase().includes("attack")) {
-      imageUrl = await maybeGenerateImage(article.title);
-    }
+    const keywords = ["explosion", "attack", "earthquake", "blast", "flood", "fire", "crash", "strike"];
+    const trigger = keywords.some(word => article.title.toLowerCase().includes(word));
+
+    const imageUrl = trigger ? await maybeGenerateImage(article.title) : null;
 
     await postTweet(tweet, imageUrl);
     savePosted(article.url);
-    break; // only one tweet per run
+    break; // one tweet per run
   }
 }
 
-// Run every 90 minutes
+// Run every 90 mins
 setInterval(runBot, 90 * 60 * 1000);
-runBot(); // also run immediately
+runBot();
 
-// Keep alive server (for Replit/Render)
+// Keep-alive server
 const app = express();
-app.get('/', (req, res) => res.send('🟢 GlobalIntel bot is running.'));
+app.get('/', (req, res) => res.send('🟢 GlobalIntel bot is live.'));
 app.listen(process.env.PORT || 3000);
