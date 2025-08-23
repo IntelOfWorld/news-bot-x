@@ -179,7 +179,7 @@ async function runBot() {
 }
 
 // Run every 90 mins
-setInterval(runBot, 90 * 60 * 1000);
+setInterval(runBot, 150 * 60 * 1000);
 runBot();
 
 // Keep-alive server
